@@ -1,0 +1,94 @@
+from django.db import models
+from django.utils.translation import get_language
+from ckeditor.fields import RichTextField
+from rest_framework import serializers, generics
+from django.urls import path
+from django.utils.translation import gettext_lazy as _
+from django.conf import settings
+from django.contrib import admin
+
+# Models
+class FAQ(models.Model):
+    question = models.TextField()
+    answer = RichTextField(config_name='default')  # WYSIWYG support for answers
+
+    # Translations
+    question_hi = models.TextField(blank=True, null=True)  # Hindi
+    question_bn = models.TextField(blank=True, null=True)  # Bengali
+    question_es = models.TextField(blank=True, null=True)  # Spanish
+    question_fr = models.TextField(blank=True, null=True)  # French
+
+    answer_hi = RichTextField(blank=True, null=True, config_name='default')
+    answer_bn = RichTextField(blank=True, null=True, config_name='default')
+    answer_es = RichTextField(blank=True, null=True, config_name='default')
+    answer_fr = RichTextField(blank=True, null=True, config_name='default')
+
+    def get_translated_text(self, field_name, lang_code=None):
+        if lang_code is None:
+            lang_code = get_language()
+        translated_field = f"{field_name}_{lang_code}"
+        return getattr(self, translated_field, None) or getattr(self, field_name)
+
+    def get_translated_question(self, lang_code=None):
+        return self.get_translated_text("question", lang_code)
+
+    def get_translated_answer(self, lang_code=None):
+        return self.get_translated_text("answer", lang_code)
+
+    def __str__(self):
+        return self.question[:50]
+
+#Admin
+@admin.register(FAQ)
+class FAQAdmin(admin.ModelAdmin):
+    list_display = ("question",)
+    search_fields = ("question", "answer")
+
+#  Serializers
+class FAQSerializer(serializers.ModelSerializer):
+    translated_question = serializers.SerializerMethodField()
+    translated_answer = serializers.SerializerMethodField()
+
+    class Meta:
+        model = FAQ
+        fields = ["id", "translated_question", "translated_answer"]
+
+    def get_translated_question(self, obj):
+        request = self.context.get("request")
+        lang_code = request.LANGUAGE_CODE if request else None
+        return obj.get_translated_question(lang_code)
+
+    def get_translated_answer(self, obj):
+        request = self.context.get("request")
+        lang_code = request.LANGUAGE_CODE if request else None
+        return obj.get_translated_answer(lang_code)
+
+#Views
+class FAQListView(generics.ListAPIView):
+    queryset = FAQ.objects.all()
+    serializer_class = FAQSerializer
+
+#URLs
+urlpatterns = [
+    path("faqs/", FAQListView.as_view(), name="faq-list"),
+]
+
+#Django Settings Update
+CKEDITOR_CONFIGS = {
+    'default': {
+        'toolbar': 'full',
+        'height': 300,
+        'width': '100%',
+        'extraPlugins': 'justify,colorbutton,font',
+    }
+}
+
+LANGUAGES = [
+    ("en", _("English")),
+    ("hi", _("Hindi")),
+    ("bn", _("Bengali")),
+    ("es", _("Spanish")),
+    ("fr", _("French")),
+]
+
+LOCALE_PATHS = ["locale"]
